@@ -1,0 +1,331 @@
+<!doctype html>
+<html>
+    <head>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+    </head>
+    <body>
+        <div id="graph-container"></div>
+        <script>
+            class Graph {
+                constructor(initialGraph = {}) {
+                    this.graph = {};
+                    if (this.isValidGraph(initialGraph)) {
+                        this.graph = initialGraph;
+                    } else {
+                        throw new Error("Invalid graph structure");
+                    }
+                }
+
+                isValidGraph(graph) {
+                    for (const node in graph) {
+                        if (!Object.hasOwnProperty.call(graph, node)) {
+                            throw new Error(
+                                `Node '${node}' is not a valid property of the graph object.`,
+                            );
+                        }
+                        if (typeof graph[node] !== "object") {
+                            throw new Error(
+                                `Node '${node}' must be an object representing its connections.`,
+                            );
+                        }
+                        // if (Object.keys(graph[node]).length === 0) {
+                        //     throw new Error(`Node '${node}' must have at least one connection.`);
+                        // }
+                        for (const neighbor in graph[node]) {
+                            if (
+                                !Object.hasOwnProperty.call(
+                                    graph[node],
+                                    neighbor,
+                                )
+                            ) {
+                                throw new Error(
+                                    `Neighbor '${neighbor}' is not a valid property of node '${node}'.`,
+                                );
+                            }
+                            const weight = graph[node][neighbor];
+                            if (typeof weight !== "number" || isNaN(weight)) {
+                                throw new Error(
+                                    `Weight of edge between '${node}' and '${neighbor}' must be a number.`,
+                                );
+                            }
+                            if (weight <= 0) {
+                                throw new Error(
+                                    `Weight of edge between '${node}' and '${neighbor}' must be a positive number.`,
+                                );
+                            }
+                            if (node === neighbor) {
+                                throw new Error(
+                                    `Node '${node}' cannot be connected to itself.`,
+                                );
+                            }
+                            if (!Object.hasOwnProperty.call(graph, neighbor)) {
+                                throw new Error(
+                                    `Neighbor '${neighbor}' is not a valid property of the graph object.`,
+                                );
+                            }
+                            if (typeof graph[neighbor] !== "object") {
+                                throw new Error(
+                                    `Neighbor '${neighbor}' must be an object representing its connections.`,
+                                );
+                            }
+                            if (Object.keys(graph[neighbor]).length === 0) {
+                                throw new Error(
+                                    `Neighbor '${neighbor}' must have at least one connection.`,
+                                );
+                            }
+                            /*
+                // for direct weights, check if the weight is the same for both directions.
+                if (graph[neighbor][node] === undefined) {
+                    throw new Error(`Edge between '${node}' and '${neighbor}' is not bidirectional.`);
+                }
+                if (graph[neighbor][node] !== weight) {
+                    throw new Error(`Weight of edge between '${node}' and '${neighbor}' is not consistent.`);
+                }
+                */
+                        }
+                    }
+                    return true;
+                }
+
+                addEdge(node1, node2, weight = 1, directed = false) {
+                    if (weight <= 0) {
+                        throw new Error("Weight must be a positive number");
+                    }
+
+                    if (!this.graph[node1]) {
+                        this.graph[node1] = {};
+                    }
+                    if (!this.graph[node2]) {
+                        this.graph[node2] = {};
+                    }
+
+                    // Check for existing edge and prevent overwriting
+                    if (
+                        this.graph[node1][node2] !== undefined ||
+                        this.graph[node2][node1] !== undefined
+                    ) {
+                        throw new Error("Edge already exists");
+                    }
+
+                    // Add edge (undirected or directed)
+                    this.graph[node1][node2] = weight;
+                    if (!directed) {
+                        this.graph[node2][node1] = weight;
+                    }
+                }
+
+                updateEdge(node1, node2, newWeight) {
+                    if (newWeight <= 0) {
+                        throw new Error("Weight must be a positive number");
+                    }
+                    if (!this.graph[node1] || !this.graph[node2]) {
+                        throw new Error("One or both nodes do not exist");
+                    }
+                    if (this.graph[node1][node2] === undefined) {
+                        throw new Error("Edge does not exist");
+                    }
+
+                    this.graph[node1][node2] = newWeight;
+                    this.graph[node2][node1] = newWeight;
+                }
+
+                removeEdge(node1, node2) {
+                    if (!this.graph[node1] || !this.graph[node2]) {
+                        throw new Error("One or both nodes do not exist");
+                    }
+                    if (this.graph[node1][node2] === undefined) {
+                        throw new Error("Edge does not exist");
+                    }
+
+                    delete this.graph[node1][node2];
+                    delete this.graph[node2][node1];
+                }
+
+                removeNode(node) {
+                    if (!this.graph[node]) {
+                        throw new Error("Node does not exist");
+                    }
+
+                    for (const neighbor in this.graph[node]) {
+                        delete this.graph[neighbor][node];
+                    }
+                    delete this.graph[node];
+                }
+
+                getNode(node) {
+                    if (!this.graph[node]) {
+                        throw new Error("Node does not exist");
+                    }
+                    return this.graph[node];
+                }
+
+                getEdge(node1, node2) {
+                    if (!this.graph[node1] || !this.graph[node2]) {
+                        throw new Error("One or both nodes do not exist");
+                    }
+                    if (this.graph[node1][node2] === undefined) {
+                        throw new Error("Edge does not exist");
+                    }
+                    return this.graph[node1][node2];
+                }
+
+                getGraph() {
+                    return this.graph;
+                }
+
+                toJSON() {
+                    return JSON.stringify(this.graph, null, 2);
+                }
+
+                drawGraph(containerId = "graph-container") {
+                    const nodes = Object.keys(this.graph).map((node) => ({
+                        id: node,
+                    }));
+                    const links = [];
+
+                    for (const [source, edges] of Object.entries(this.graph)) {
+                        for (const [target, weight] of Object.entries(edges)) {
+                            if (source < target) {
+                                // To avoid duplicate edges in undirected graph
+                                links.push({ source, target, weight });
+                            }
+                        }
+                    }
+
+                    const width = 500;
+                    const height = 500;
+
+                    const svg = d3
+                        .select(`#${containerId}`)
+                        .append("svg")
+                        .attr("width", width)
+                        .attr("height", height)
+                        .call(
+                            d3.zoom().on("zoom", (event) => {
+                                svg.attr("transform", event.transform);
+                            }),
+                        )
+                        .append("g");
+
+                    const simulation = d3
+                        .forceSimulation(nodes)
+                        .force(
+                            "link",
+                            d3
+                                .forceLink(links)
+                                .id((d) => d.id)
+                                .distance(100),
+                        )
+                        .force("charge", d3.forceManyBody().strength(-300))
+                        .force("center", d3.forceCenter(width / 2, height / 2));
+                    //.force('x', d3.forceX().strength(0.1).x(width / 2))
+                    //.force('y', d3.forceY().strength(0.1).y(height / 2));
+
+                    const link = svg
+                        .append("g")
+                        .attr("stroke", "#999")
+                        .attr("stroke-opacity", 0.6)
+                        .selectAll("line")
+                        .data(links)
+                        .join("line")
+                        .attr("stroke-width", (d) => Math.sqrt(d.weight));
+
+                    // Add edge labels
+                    const linkLabels = svg
+                        .append("g")
+                        .selectAll("text")
+                        .data(links)
+                        .join("text")
+                        .attr("font-size", 12)
+                        .attr("fill", "black")
+                        .text((d) => d.weight);
+
+                    const node = svg
+                        .append("g")
+                        .attr("stroke", "#fff")
+                        .attr("stroke-width", 1.5)
+                        .selectAll("circle")
+                        .data(nodes)
+                        .join("circle")
+                        .attr("r", 5)
+                        .attr("fill", "#69b3a2")
+                        .call(drag(simulation));
+
+                    // Add node labels
+                    const nodeLabels = svg
+                        .append("g")
+                        .selectAll("text")
+                        .data(nodes)
+                        .join("text")
+                        .attr("font-size", 12)
+                        .attr("dy", -10)
+                        .attr("text-anchor", "middle")
+                        .text((d) => d.id);
+
+                    node.append("title").text((d) => d.id);
+
+                    simulation.on("tick", () => {
+                        link.attr("x1", (d) => d.source.x)
+                            .attr("y1", (d) => d.source.y)
+                            .attr("x2", (d) => d.target.x)
+                            .attr("y2", (d) => d.target.y);
+
+                        node.attr("cx", (d) =>
+                            Math.max(5, Math.min(width - 5, d.x)),
+                        ).attr("cy", (d) =>
+                            Math.max(5, Math.min(height - 5, d.y)),
+                        );
+
+                        nodeLabels.attr("x", (d) => d.x).attr("y", (d) => d.y);
+
+                        linkLabels
+                            .attr("x", (d) => (d.source.x + d.target.x) / 2)
+                            .attr("y", (d) => (d.source.y + d.target.y) / 2);
+                    });
+
+                    function drag(simulation) {
+                        function dragstarted(event, d) {
+                            if (!event.active)
+                                simulation.alphaTarget(0.3).restart();
+                            d.fx = d.x;
+                            d.fy = d.y;
+                        }
+
+                        function dragged(event, d) {
+                            d.fx = event.x;
+                            d.fy = event.y;
+                        }
+
+                        function dragended(event, d) {
+                            if (!event.active) simulation.alphaTarget(0);
+                            d.fx = null;
+                            d.fy = null;
+                        }
+
+                        return d3
+                            .drag()
+                            .on("start", dragstarted)
+                            .on("drag", dragged)
+                            .on("end", dragended);
+                    }
+                }
+            }
+
+            const graphData = {
+                S: { A: 7, B: 6, D: 16 },
+                A: { S: 7, C: 10, D: 5 },
+                B: { S: 6, E: 3 },
+                C: { A: 10, D: 4, F: 3 },
+                D: { A: 5, C: 4, S: 16, G: 8 },
+                E: { B: 3, H: 4, G: 6 },
+                F: { C: 3, T: 2 },
+                G: { D: 8, E: 6, T: 8 },
+                H: { E: 4, G: 10 },
+                T: { F: 2, G: 8 },
+            };
+
+            const myGraph = new Graph(graphData);
+            myGraph.drawGraph("graph-container");
+        </script>
+    </body>
+</html>
